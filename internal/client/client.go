@@ -23,18 +23,20 @@ func (ce *CacheEntry) IsExpired() bool {
 	return time.Since(ce.Timestamp) > ce.TTL
 }
 
-// TagCache implements an in-memory cache for SLB tags
+// TagCache implements an in-memory cache for SLB tags and regions
 type TagCache struct {
-	cache map[string]map[string]string
-	mu    sync.RWMutex
-	ttl   time.Duration
+	cache       map[string]map[string]string
+	regionCache map[string]string
+	mu          sync.RWMutex
+	ttl         time.Duration
 }
 
 // NewTagCache creates a new tag cache
 func NewTagCache(ttl time.Duration) *TagCache {
 	return &TagCache{
-		cache: make(map[string]map[string]string),
-		ttl:   ttl,
+		cache:       make(map[string]map[string]string),
+		regionCache: make(map[string]string),
+		ttl:         ttl,
 	}
 }
 
@@ -46,11 +48,28 @@ func (tc *TagCache) Get(key string) (map[string]string, bool) {
 	return tags, found
 }
 
+// GetWithRegion retrieves tags and region from cache
+func (tc *TagCache) GetWithRegion(key string) (map[string]string, string, bool) {
+	tc.mu.RLock()
+	defer tc.mu.RUnlock()
+	tags, found := tc.cache[key]
+	region := tc.regionCache[key]
+	return tags, region, found
+}
+
 // Set stores tags in cache
 func (tc *TagCache) Set(key string, tags map[string]string) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 	tc.cache[key] = tags
+}
+
+// SetWithRegion stores tags and region in cache
+func (tc *TagCache) SetWithRegion(key string, tags map[string]string, region string) {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	tc.cache[key] = tags
+	tc.regionCache[key] = region
 }
 
 
@@ -355,17 +374,27 @@ func (c *Client) Health(ctx context.Context) error {
 // GetSLBInstanceTags retrieves tags for SLB instances using DescribeLoadBalancers API
 // This method implements caching and batch processing for optimal performance
 func (c *Client) GetSLBInstanceTags(ctx context.Context, instanceIDs []string) (map[string]map[string]string, error) {
+	tags, _, err := c.GetSLBInstanceTagsWithRegion(ctx, instanceIDs)
+	return tags, err
+}
+
+// GetSLBInstanceTagsWithRegion retrieves tags and region info for SLB instances
+func (c *Client) GetSLBInstanceTagsWithRegion(ctx context.Context, instanceIDs []string) (map[string]map[string]string, map[string]string, error) {
 	if len(instanceIDs) == 0 {
-		return make(map[string]map[string]string), nil
+		return make(map[string]map[string]string), make(map[string]string), nil
 	}
 
 	tagsMap := make(map[string]map[string]string)
+	regionMap := make(map[string]string)
 	uncachedIDs := make([]string, 0)
 
 	// Check cache first to avoid unnecessary API calls
 	for _, id := range instanceIDs {
-		if tags, found := c.tagCache.Get(id); found {
+		if tags, region, found := c.tagCache.GetWithRegion(id); found {
 			tagsMap[id] = tags
+			if region != "" {
+				regionMap[id] = region
+			}
 		} else {
 			uncachedIDs = append(uncachedIDs, id)
 		}
@@ -373,7 +402,7 @@ func (c *Client) GetSLBInstanceTags(ctx context.Context, instanceIDs []string) (
 
 	// If all instances are cached, return immediately
 	if len(uncachedIDs) == 0 {
-		return tagsMap, nil
+		return tagsMap, regionMap, nil
 	}
 
 	// Create a set of uncached IDs for efficient lookup and removal
@@ -391,7 +420,7 @@ func (c *Client) GetSLBInstanceTags(ctx context.Context, instanceIDs []string) (
 
 		// Apply rate limiting before API call
 		if err := c.rateLimiter.Wait(ctx); err != nil {
-			return tagsMap, fmt.Errorf("rate limiter error: %w", err)
+			return tagsMap, regionMap, fmt.Errorf("rate limiter error: %w", err)
 		}
 
 		// Create and configure the DescribeLoadBalancers request
@@ -424,7 +453,8 @@ func (c *Client) GetSLBInstanceTags(ctx context.Context, instanceIDs []string) (
 			
 			// Store in result map and cache
 			tagsMap[lb.LoadBalancerId] = instanceTags
-			c.tagCache.Set(lb.LoadBalancerId, instanceTags)
+			regionMap[lb.LoadBalancerId] = region
+			c.tagCache.SetWithRegion(lb.LoadBalancerId, instanceTags, region)
 
 			// Remove found instance from uncached set
 			delete(uncachedSet, lb.LoadBalancerId)
@@ -435,8 +465,8 @@ func (c *Client) GetSLBInstanceTags(ctx context.Context, instanceIDs []string) (
 	for remainingID := range uncachedSet {
 		emptyTags := make(map[string]string)
 		tagsMap[remainingID] = emptyTags
-		c.tagCache.Set(remainingID, emptyTags)
+		c.tagCache.SetWithRegion(remainingID, emptyTags, "")
 	}
 
-	return tagsMap, nil
+	return tagsMap, regionMap, nil
 }

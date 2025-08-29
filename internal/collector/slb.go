@@ -103,16 +103,19 @@ func (c *SLBCollector) CollectSLBMetric(ctx context.Context, metricName string, 
 		instanceIDs = append(instanceIDs, instanceID)
 	}
 
-	// Get tags for all instances
+	// Get tags and regions for all instances
 	var tagsMap map[string]map[string]string
+	var regionsMap map[string]string
 	if len(instanceIDs) > 0 {
-		tagsMap, err = c.client.GetSLBInstanceTags(ctx, instanceIDs)
+		tagsMap, regionsMap, err = c.client.GetSLBInstanceTagsWithRegion(ctx, instanceIDs)
 		if err != nil {
 			c.logger.WithError(err).Warn("Failed to get SLB instance tags, continuing without tags")
 			tagsMap = make(map[string]map[string]string)
+			regionsMap = make(map[string]string)
 		}
 	} else {
 		tagsMap = make(map[string]map[string]string)
+		regionsMap = make(map[string]string)
 	}
 
 	// Only keep Team, Group, Name tags and add region
@@ -138,7 +141,7 @@ func (c *SLBCollector) CollectSLBMetric(ctx context.Context, metricName string, 
 			value = data.Sum
 		}
 
-		labelValues := c.buildDynamicSLBLabelValues(data, tagsMap[data.InstanceID], tagKeys)
+		labelValues := c.buildDynamicSLBLabelValues(data, tagsMap[data.InstanceID], regionsMap[data.InstanceID], tagKeys)
 
 		metric, err := prometheus.NewConstMetric(
 			dynamicDesc,
@@ -157,9 +160,14 @@ func (c *SLBCollector) CollectSLBMetric(ctx context.Context, metricName string, 
 }
 
 // buildSLBLabelValues builds label values for SLB metrics with tags and region
-func (c *SLBCollector) buildSLBLabelValues(data MetricData, tags map[string]string) []string {
+func (c *SLBCollector) buildSLBLabelValues(data MetricData, tags map[string]string, region string) []string {
 	switch c.serviceName {
 	case "slb":
+		// Use instance-specific region if available, otherwise fall back to client region
+		instanceRegion := region
+		if instanceRegion == "" {
+			instanceRegion = c.client.GetRegion()
+		}
 		// Get tag values, use empty string if not found
 		team := ""
 		group := ""
@@ -175,17 +183,28 @@ func (c *SLBCollector) buildSLBLabelValues(data MetricData, tags map[string]stri
 				name = val
 			}
 		}
-		return []string{data.InstanceID, data.Protocol, data.Port, data.Vip, c.client.GetRegion(), team, group, name}
+		return []string{data.InstanceID, data.Protocol, data.Port, data.Vip, instanceRegion, team, group, name}
 	default:
-		// Fallback to base implementation
-		return c.buildLabelValues(data)
+		// Fallback to base implementation with region
+		instanceRegion := region
+		if instanceRegion == "" {
+			instanceRegion = c.client.GetRegion()
+		}
+		// For non-SLB services, use base buildLabelValues but this shouldn't happen in SLB collector
+		return c.BaseCollector.buildLabelValues(data)
 	}
 }
 
 // buildDynamicSLBLabelValues builds label values for SLB metrics with only Team, Group, Name tags and region
-func (c *SLBCollector) buildDynamicSLBLabelValues(data MetricData, tags map[string]string, tagKeys []string) []string {
+func (c *SLBCollector) buildDynamicSLBLabelValues(data MetricData, tags map[string]string, region string, tagKeys []string) []string {
+	// Use instance-specific region if available, otherwise fall back to client region
+	instanceRegion := region
+	if instanceRegion == "" {
+		instanceRegion = c.client.GetRegion()
+	}
+
 	// Start with basic SLB labels including region
-	labelValues := []string{data.InstanceID, data.Protocol, data.Port, data.Vip, c.client.GetRegion()}
+	labelValues := []string{data.InstanceID, data.Protocol, data.Port, data.Vip, instanceRegion}
 
 	// Add only Team, Group, Name tag values
 	team := ""
