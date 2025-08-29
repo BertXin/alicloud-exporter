@@ -115,11 +115,11 @@ func (c *SLBCollector) CollectSLBMetric(ctx context.Context, metricName string, 
 		tagsMap = make(map[string]map[string]string)
 	}
 
-	// Only keep Team, Group, Name tags
+	// Only keep Team, Group, Name tags and add region
 	tagKeys := []string{"Team", "Group", "Name"}
 
-	// Create descriptor with only the required tags
-	labels := []string{"instance_id", "protocol", "port", "vip"}
+	// Create descriptor with only the required tags plus region
+	labels := []string{"instance_id", "protocol", "port", "vip", "region"}
 	labels = append(labels, tagKeys...)
 
 	dynamicDesc := prometheus.NewDesc(
@@ -156,7 +156,7 @@ func (c *SLBCollector) CollectSLBMetric(ctx context.Context, metricName string, 
 	return nil
 }
 
-// buildSLBLabelValues builds label values for SLB metrics with tags
+// buildSLBLabelValues builds label values for SLB metrics with tags and region
 func (c *SLBCollector) buildSLBLabelValues(data MetricData, tags map[string]string) []string {
 	switch c.serviceName {
 	case "slb":
@@ -175,24 +175,24 @@ func (c *SLBCollector) buildSLBLabelValues(data MetricData, tags map[string]stri
 				name = val
 			}
 		}
-		return []string{data.InstanceID, data.Protocol, data.Port, data.Vip, team, group, name}
+		return []string{data.InstanceID, data.Protocol, data.Port, data.Vip, c.client.GetRegion(), team, group, name}
 	default:
 		// Fallback to base implementation
 		return c.buildLabelValues(data)
 	}
 }
 
-// buildDynamicSLBLabelValues builds label values for SLB metrics with only Team, Group, Name tags
+// buildDynamicSLBLabelValues builds label values for SLB metrics with only Team, Group, Name tags and region
 func (c *SLBCollector) buildDynamicSLBLabelValues(data MetricData, tags map[string]string, tagKeys []string) []string {
-	// Start with basic SLB labels
-	labelValues := []string{data.InstanceID, data.Protocol, data.Port, data.Vip}
+	// Start with basic SLB labels including region
+	labelValues := []string{data.InstanceID, data.Protocol, data.Port, data.Vip, c.client.GetRegion()}
 
 	// Add only Team, Group, Name tag values
 	team := ""
 	group := ""
 	name := ""
 	if tags != nil {
-		if val, ok := tags["team"]; ok {
+		if val, ok := tags["Team"]; ok {
 			team = val
 		}
 		if val, ok := tags["Group"]; ok {

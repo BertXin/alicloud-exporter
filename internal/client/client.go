@@ -331,6 +331,11 @@ func (c *Client) Close() {
 	}
 }
 
+// GetRegion returns the primary region configured for this client
+func (c *Client) GetRegion() string {
+	return c.config.Region
+}
+
 // Health checks the health of the client
 func (c *Client) Health(ctx context.Context) error {
 	// Try to make a simple request to test connectivity

@@ -104,8 +104,8 @@ func (bc *BaseCollector) initMetricDescriptors() {
 		// Add service-specific labels (only non-empty ones will be used)
 		switch bc.serviceName {
 		case "slb":
-			// For SLB, we'll create descriptors dynamically with tags
-			labels = append(labels, "protocol", "port", "vip")
+			// For SLB, we'll create descriptors dynamically with tags and region
+			labels = append(labels, "protocol", "port", "vip", "region")
 		case "redis":
 			// Redis - only add labels that might have values
 			// We'll filter empty values in buildLabelValues
@@ -204,6 +204,7 @@ func (bc *BaseCollector) buildLabelValues(data MetricData) []string {
 			data.Protocol,
 			data.Port,
 			data.Vip,
+			bc.client.GetRegion(),
 		}
 	case "redis", "rds":
 		// Only return instance_id for redis and rds to avoid empty labels
