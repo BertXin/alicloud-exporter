@@ -1,0 +1,59 @@
+# Prometheus 配置文件
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'alicloud-exporter-monitor'
+
+# 规则文件
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+# 抓取配置
+scrape_configs:
+  # Prometheus 自身监控
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Alicloud Exporter 监控
+  - job_name: 'alicloud-exporter'
+    static_configs:
+      - targets: ['alicloud-exporter:9100']
+    scrape_interval: 60s
+    scrape_timeout: 30s
+    metrics_path: '/metrics'
+    params:
+      # 可以添加查询参数
+    honor_labels: true
+    # 添加额外标签
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: alicloud-exporter:9100
+
+  # 如果有其他 exporter，可以在这里添加
+  # - job_name: 'node-exporter'
+  #   static_configs:
+  #     - targets: ['node-exporter:9100']
+
+# 告警管理器配置 (可选)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# 远程写入配置 (可选)
+# remote_write:
+#   - url: "http://remote-storage:9201/write"
+
+# 远程读取配置 (可选)
+# remote_read:
+#   - url: "http://remote-storage:9201/read"

@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # Alicloud Exporter 服务
+  alicloud-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        BUILD_TIME: ${BUILD_TIME}
+        GIT_COMMIT: ${GIT_COMMIT}
+    container_name: alicloud-exporter
+    ports:
+      - "9100:9100"
+    environment:
+      # 阿里云认证信息 (通过环境变量传入)
+      - ALICLOUD_ACCESS_KEY_ID=${ALICLOUD_ACCESS_KEY_ID}
+      - ALICLOUD_ACCESS_KEY_SECRET=${ALICLOUD_ACCESS_KEY_SECRET}
+      - ALICLOUD_REGION=${ALICLOUD_REGION:-cn-hangzhou}
+      
+      # 应用配置
+      - ALICLOUD_EXPORTER_LOG_LEVEL=${LOG_LEVEL:-info}
+      - ALICLOUD_EXPORTER_LOG_FORMAT=${LOG_FORMAT:-json}
+    volumes:
+      # 挂载配置文件 (可选)
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      # 挂载日志目录 (可选)
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - monitoring
+
+  # Prometheus 服务 (用于测试)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - alicloud-exporter
+
+  # Grafana 服务 (用于可视化)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  monitoring:
+    driver: bridge

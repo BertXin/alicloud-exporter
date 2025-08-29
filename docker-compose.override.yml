@@ -1,0 +1,27 @@
+# 开发环境配置覆盖文件
+# 此文件会自动与 docker-compose.yml 合并
+version: '3.8'
+
+services:
+  alicloud-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder  # 使用构建阶段进行开发
+    volumes:
+      # 挂载源代码进行热重载开发
+      - .:/app
+      - /app/bin  # 排除 bin 目录
+    environment:
+      - ALICLOUD_EXPORTER_LOG_LEVEL=debug
+      - ALICLOUD_EXPORTER_LOG_FORMAT=text  # 开发时使用文本格式更易读
+    command: [
+      "sh", "-c", 
+      "go run cmd/alicloud-exporter/main.go --config /app/config/config.yaml --log-level debug"
+    ]
+    ports:
+      - "9100:9100"
+      - "2345:2345"  # 调试端口 (delve)
+    # 开发时禁用健康检查以避免干扰
+    healthcheck:
+      disable: true
