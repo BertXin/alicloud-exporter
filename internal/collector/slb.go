@@ -168,17 +168,20 @@ func (c *SLBCollector) buildSLBLabelValues(data MetricData, tags map[string]stri
 		if instanceRegion == "" {
 			instanceRegion = c.client.GetRegion()
 		}
-		// Get tag values, use empty string if not found
+		// Get tag values, use empty string if not found (support both uppercase and lowercase)
 		team := ""
 		group := ""
 		name := ""
 		if tags != nil {
-			if val, ok := tags["Team"]; ok {
+			// Try both uppercase and lowercase for team
+			if val, ok := tags["team"]; ok {
 				team = val
-			}
+			} 
+			// Try both uppercase and lowercase for group
 			if val, ok := tags["Group"]; ok {
 				group = val
-			}
+			} 
+			// Try both uppercase and lowercase for name
 			if val, ok := tags["Name"]; ok {
 				name = val
 			}
@@ -206,20 +209,23 @@ func (c *SLBCollector) buildDynamicSLBLabelValues(data MetricData, tags map[stri
 	// Start with basic SLB labels including region
 	labelValues := []string{data.InstanceID, data.Protocol, data.Port, data.Vip, instanceRegion}
 
-	// Add only Team, Group, Name tag values
+	// Add only Team, Group, Name tag values (support both uppercase and lowercase)
 	team := ""
 	group := ""
 	name := ""
 	if tags != nil {
-		if val, ok := tags["Team"]; ok {
+		// Try both uppercase and lowercase for team
+		if val, ok := tags["team"]; ok {
 			team = val
-		}
+		} 
+		// Try both uppercase and lowercase for group
 		if val, ok := tags["Group"]; ok {
 			group = val
-		}
+		} 
+		// Try both uppercase and lowercase for name
 		if val, ok := tags["Name"]; ok {
 			name = val
-		}
+		} 
 	}
 
 	labelValues = append(labelValues, team, group, name)

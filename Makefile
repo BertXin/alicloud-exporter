@@ -8,7 +8,7 @@ GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 # Go 相关变量
 GO := go
-GOFLAGS := -ldflags "-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME) -X main.gitCommit=$(GIT_COMMIT)"
+GOFLAGS := -ldflags "-X main.version=$(VERSION) -X main.buildDate=$(BUILD_TIME) -X main.commitSHA=$(GIT_COMMIT)"
 GOOS := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
 
